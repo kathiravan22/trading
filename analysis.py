@@ -26,10 +26,14 @@ def calculate_ema(data, window=50):
     return data['Close'].ewm(span=window, adjust=False).mean()
 
 def get_resistance_levels(data, distance=5, prominence=1):
-    """Detects swing highs using peak detection on 'High' prices."""
     highs = data['High'].values
     peaks, _ = find_peaks(highs, distance=distance, prominence=prominence)
     return data['High'].iloc[peaks]
+
+def get_support_levels(data, distance=5, prominence=1):
+    lows = data['Low'].values
+    troughs, _ = find_peaks(-lows, distance=distance, prominence=prominence)
+    return data['Low'].iloc[troughs]
 
 def analyze_stock(stock_name, timeframe='1d'):
     data = get_stock_data(stock_name, timeframe)
@@ -41,22 +45,22 @@ def analyze_stock(stock_name, timeframe='1d'):
         ema_50 = calculate_ema(data)
         uptrend = last_close > float(ema_50.iloc[-1])
 
-        # HH-HL simplified check (improved: 3-bar trend)
+        # HH-HL simplified check (3-bar trend)
         highs = data['High'].values[-3:]
         lows = data['Low'].values[-3:]
         hh = highs[-1] > highs[-2] > highs[-3]
         hl = lows[-1] > lows[-2] > lows[-3]
         hh_hl = hh and hl
 
-        # Real resistance detection
         resistance_levels = get_resistance_levels(data)
+        support_levels = get_support_levels(data)
+
         near_resistance = False
         if not resistance_levels.empty:
             nearest_resistance = resistance_levels[resistance_levels > last_close].min(initial=np.nan)
             if not np.isnan(nearest_resistance):
-                near_resistance = last_close >= nearest_resistance * 0.98  # within 2% of resistance
+                near_resistance = last_close >= nearest_resistance * 0.98
 
-        # Volume spike
         volumes = data['Volume'].values[-10:]
         volume_spike = volumes[-1] > np.mean(volumes[:-1]) * 1.5
 
@@ -67,7 +71,6 @@ def analyze_stock(stock_name, timeframe='1d'):
         data['TR'] = data[['H-L', 'H-PC', 'L-PC']].max(axis=1)
         atr = data['TR'].rolling(14).mean().iloc[-1]
 
-        # R/R calculation
         stop_loss = last_close - 2 * atr
         target = last_close + 4 * atr
         rr_ratio = (target - last_close) / (last_close - stop_loss)
@@ -86,8 +89,10 @@ def analyze_stock(stock_name, timeframe='1d'):
             "target": round(target, 2),
             "rr_ratio": round(rr_ratio, 2),
             "resistance_levels": resistance_levels.tolist(),
+            "support_levels": support_levels.tolist(),
             "last_close": last_close,
-            "ema_50": round(ema_50.iloc[-1], 2)
+            "ema_50": ema_50,
+            "data": data
         }
 
     except Exception as e:
